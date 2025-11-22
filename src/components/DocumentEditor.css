@@ -1,0 +1,191 @@
+/* src/components/DocumentEditor.css */
+.doc-root {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  padding: 16px;
+  height: calc(100vh - 100px);
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-header {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.doc-title-input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  font-size: 16px;
+}
+
+.doc-header button {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: none;
+  background: #4f46e5;
+  color: white;
+  cursor: pointer;
+}
+
+.doc-body {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.doc-editor {
+  flex: 2;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  padding: 10px;
+  resize: none;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.doc-sidebar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.upload-card,
+.files-card {
+  background: #f9fafb;
+  border-radius: 12px;
+  padding: 10px;
+  overflow: auto;
+}
+
+.upload-sub {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+
+.files-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.files-card li {
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.file-meta {
+  display: block;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.share-btn {
+  margin-left: 10px;
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.share-popup {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 999;
+}
+
+.share-card {
+  background: #fff;
+  padding: 20px;
+  width: 320px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.share-card input {
+  width: 100%;
+  padding: 8px;
+  margin-top: 8px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+}
+
+.share-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.share-actions button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+.share-actions .close {
+  background: #aaa;
+}
+
+.share-error {
+  color: #b91c1c;
+  margin-top: 8px;
+}
+
+.share-success {
+  color: #15803d;
+  margin-top: 8px;
+}
+
+/* ACTIVE USERS BAR */
+.active-users-bar {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: #eef2ff;
+  border-bottom: 1px solid #ddd;
+  gap: 10px;
+}
+
+.active-user {
+  width: 32px;
+  height: 32px;
+  background: #4f46e5;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.active-label {
+  font-size: 13px;
+  color: #374151;
+}
+
+.saving-text {
+  margin-left: 12px;
+  font-size: 14px;
+  color: #d97706; /* amber */
+}
+
+.saved-text {
+  margin-left: 12px;
+  font-size: 14px;
+  color: #059669; /* green */
+  font-weight: 500;
+}

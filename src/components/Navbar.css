@@ -1,0 +1,90 @@
+/* NAVBAR ROOT */
+.nav-root {
+  height: 58px;
+  background: #4f46e5;
+  color: white;
+  padding: 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+}
+
+/* TITLE */
+.nav-title {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* USER BADGE */
+.nav-right {
+  position: relative;
+}
+
+.user-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.user-circle {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: #6366f1;
+  border: 2px solid white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.user-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* DROPDOWN MENU */
+.user-menu {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  background: #ffffff;
+  color: #111827;
+  padding: 10px 0;
+  width: 140px;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  animation: fadeIn 0.15s ease;
+  z-index: 50;
+}
+
+.logout-btn {
+  width: 100%;
+  padding: 10px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.logout-btn:hover {
+  background: #f3f4f6;
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
