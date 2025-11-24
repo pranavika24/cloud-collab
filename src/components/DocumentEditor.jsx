@@ -1,4 +1,4 @@
-// ⬇️ COMPLETE, FINAL, FULLY-FIXED FILE
+// ✅ FINAL, COMPLETE, FULLY-FIXED VERSION
 // src/components/DocumentEditor.jsx
 
 import React, { useEffect, useState, useRef } from "react";
@@ -27,9 +27,7 @@ const DocumentEditor = ({ documentId }) => {
   const { user } = useAuth();
   const userName = user?.displayName || user?.email;
 
-  // ------------------------------
   // STATES
-  // ------------------------------
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [lastSaved, setLastSaved] = useState(null);
@@ -46,14 +44,14 @@ const DocumentEditor = ({ documentId }) => {
 
   const [activeUsers, setActiveUsers] = useState([]);
 
-  // Skip the next snapshot (fixes cursor jumping)
+  // Fix cursor jumping
   const skipNextSnapshot = useRef(false);
 
-  // Debounce autosave
+  // Debounce timer
   const saveTimer = useRef(null);
 
   // ------------------------------
-  // REAL-TIME DOCUMENT LISTENER
+  // REAL-TIME LISTENER
   // ------------------------------
   useEffect(() => {
     if (!documentId) return;
@@ -63,7 +61,7 @@ const DocumentEditor = ({ documentId }) => {
     const unsub = onSnapshot(ref, (snap) => {
       if (!snap.exists()) return;
 
-      // Ignore snapshot right after our own save
+      // Prevent cursor jump
       if (skipNextSnapshot.current) {
         skipNextSnapshot.current = false;
         return;
@@ -71,7 +69,6 @@ const DocumentEditor = ({ documentId }) => {
 
       const data = snap.data();
 
-      // Update only if remote version differs
       setTitle((prev) => (prev !== data.title ? data.title : prev));
       setContent((prev) => (prev !== data.content ? data.content : prev));
     });
@@ -98,19 +95,19 @@ const DocumentEditor = ({ documentId }) => {
   }, [documentId]);
 
   // ------------------------------
-  // ACTIVE USERS (with userName dependency)
+  // ACTIVE USERS
   // ------------------------------
   useEffect(() => {
     if (!documentId || !user) return;
 
-    const userRef = doc(db, "documents", documentId, "activeUsers", user.uid);
+    const ref = doc(db, "documents", documentId, "activeUsers", user.uid);
 
-    setDoc(userRef, {
+    setDoc(ref, {
       name: userName,
       joinedAt: serverTimestamp(),
     });
 
-    return () => deleteDoc(userRef);
+    return () => deleteDoc(ref);
   }, [documentId, user, userName]);
 
   useEffect(() => {
@@ -126,7 +123,7 @@ const DocumentEditor = ({ documentId }) => {
   }, [documentId]);
 
   // ------------------------------
-  // SAVE DOCUMENT (manual)
+  // MANUAL SAVE
   // ------------------------------
   const handleSave = async () => {
     setSaving(true);
@@ -152,7 +149,7 @@ const DocumentEditor = ({ documentId }) => {
   };
 
   // ------------------------------
-  // AUTOSAVE
+  // AUTOSAVE (debounced)
   // ------------------------------
   const triggerAutosave = () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -176,17 +173,13 @@ const DocumentEditor = ({ documentId }) => {
   // FILE UPLOAD TO SUPABASE
   // ------------------------------
   const uploadFile = async (file, path) => {
-    const { data, error } = await supabase.storage
-      .from("documents")
-      .upload(path, file);
+    const { error } = await supabase.storage.from("documents").upload(path, file);
 
     if (error) throw error;
 
-    const { data: urlObj } = supabase.storage
-      .from("documents")
-      .getPublicUrl(path);
+    const { data } = supabase.storage.from("documents").getPublicUrl(path);
 
-    return urlObj.publicUrl;
+    return data.publicUrl;
   };
 
   const handleFileUpload = async (e) => {
@@ -202,14 +195,14 @@ const DocumentEditor = ({ documentId }) => {
 
         await addDoc(collection(db, "documents", documentId, "files"), {
           name: file.name,
-          size: file.size,
           url,
+          size: file.size,
           uploadedByName: userName,
           uploadedAt: serverTimestamp(),
         });
       }
     } catch (err) {
-      console.log("Upload failed:", err);
+      console.log("upload error:", err);
     }
 
     setUploading(false);
@@ -223,7 +216,10 @@ const DocumentEditor = ({ documentId }) => {
     setShareError("");
     setShareSuccess("");
 
-    if (!shareEmail.trim()) return setShareError("Enter valid email");
+    if (!shareEmail.trim()) {
+      setShareError("Enter valid email");
+      return;
+    }
 
     const snap = await getDocs(
       query(collection(db, "users"), where("email", "==", shareEmail.trim()))
@@ -276,10 +272,10 @@ const DocumentEditor = ({ documentId }) => {
         </button>
       </div>
 
-      {/* ACTIVE USERS BAR */}
+      {/* ACTIVE USERS */}
       <div className="active-users-bar">
         {activeUsers.map((u, i) => (
-          <div key={i} className="active-user">
+          <div className="active-user" key={i}>
             {u.name?.charAt(0).toUpperCase()}
           </div>
         ))}
@@ -329,18 +325,20 @@ const DocumentEditor = ({ documentId }) => {
         <div className="share-popup">
           <div className="share-card">
             <h3>Share Document</h3>
+
             <input
               type="email"
-              placeholder="user@example.com"
               value={shareEmail}
+              placeholder="user@example.com"
               onChange={(e) => setShareEmail(e.target.value)}
             />
+
             {shareError && <p className="share-error">{shareError}</p>}
             {shareSuccess && <p className="share-success">{shareSuccess}</p>}
 
             <div className="share-actions">
               <button onClick={handleShare}>Add</button>
-              <button className="close" onClick={() => setShowShare(false)}>
+              <button onClick={() => setShowShare(false)} className="close">
                 Close
               </button>
             </div>
