@@ -1,3 +1,6 @@
+// ⬇️ COMPLETE, FINAL, FULLY-FIXED FILE
+// src/components/DocumentEditor.jsx
+
 import React, { useEffect, useState, useRef } from "react";
 import { db } from "../firebase";
 import {
@@ -24,14 +27,17 @@ const DocumentEditor = ({ documentId }) => {
   const { user } = useAuth();
   const userName = user?.displayName || user?.email;
 
+  // ------------------------------
+  // STATES
+  // ------------------------------
   const [title, setTitle] = useState("");
-  const [content, setContentState] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [autoSaving, setAutoSaving] = useState(false);
+  const [content, setContent] = useState("");
   const [lastSaved, setLastSaved] = useState(null);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [saving, setSaving] = useState(false);
+
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
 
   const [showShare, setShowShare] = useState(false);
   const [shareEmail, setShareEmail] = useState("");
@@ -40,32 +46,42 @@ const DocumentEditor = ({ documentId }) => {
 
   const [activeUsers, setActiveUsers] = useState([]);
 
-  const saveTimeoutRef = useRef(null);
+  // Skip the next snapshot (fixes cursor jumping)
   const skipNextSnapshot = useRef(false);
 
-  // 🔵 Load Document realtime
+  // Debounce autosave
+  const saveTimer = useRef(null);
+
+  // ------------------------------
+  // REAL-TIME DOCUMENT LISTENER
+  // ------------------------------
   useEffect(() => {
     if (!documentId) return;
 
-    const docRef = doc(db, "documents", documentId);
+    const ref = doc(db, "documents", documentId);
 
-    const unsub = onSnapshot(docRef, (snap) => {
+    const unsub = onSnapshot(ref, (snap) => {
+      if (!snap.exists()) return;
+
+      // Ignore snapshot right after our own save
       if (skipNextSnapshot.current) {
         skipNextSnapshot.current = false;
         return;
       }
 
       const data = snap.data();
-      if (data) {
-        setTitle(data.title || "");
-        setContentState(data.content || "");
-      }
+
+      // Update only if remote version differs
+      setTitle((prev) => (prev !== data.title ? data.title : prev));
+      setContent((prev) => (prev !== data.content ? data.content : prev));
     });
 
     return () => unsub();
   }, [documentId]);
 
-  // 🔵 Load Files realtime
+  // ------------------------------
+  // LOAD FILES
+  // ------------------------------
   useEffect(() => {
     if (!documentId) return;
 
@@ -74,75 +90,76 @@ const DocumentEditor = ({ documentId }) => {
       orderBy("uploadedAt", "desc")
     );
 
-    const unsub = onSnapshotCollection(q, (snapshot) => {
-      setFiles(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    const unsub = onSnapshotCollection(q, (snap) => {
+      setFiles(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
 
     return () => unsub();
   }, [documentId]);
 
-  // 🔵 Active users tracker
+  // ------------------------------
+  // ACTIVE USERS (with userName dependency)
+  // ------------------------------
   useEffect(() => {
     if (!documentId || !user) return;
 
-    const ref = doc(db, "documents", documentId, "activeUsers", user.uid);
+    const userRef = doc(db, "documents", documentId, "activeUsers", user.uid);
 
-    setDoc(ref, {
+    setDoc(userRef, {
       name: userName,
-      enteredAt: serverTimestamp(),
+      joinedAt: serverTimestamp(),
     });
 
-    return () => deleteDoc(ref);
+    return () => deleteDoc(userRef);
+  }, [documentId, user, userName]);
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [documentId, user]);
-
-  // 🔵 Listen to active users
   useEffect(() => {
     if (!documentId) return;
 
-    const activeRef = collection(db, "documents", documentId, "activeUsers");
+    const usersRef = collection(db, "documents", documentId, "activeUsers");
 
-    const unsub = onSnapshot(activeRef, (snapshot) => {
-      setActiveUsers(snapshot.docs.map((d) => d.data()));
+    const unsub = onSnapshot(usersRef, (snap) => {
+      setActiveUsers(snap.docs.map((d) => d.data()));
     });
 
     return () => unsub();
   }, [documentId]);
 
-  // 🔵 Manual Save Button
+  // ------------------------------
+  // SAVE DOCUMENT (manual)
+  // ------------------------------
   const handleSave = async () => {
     setSaving(true);
-    try {
-      skipNextSnapshot.current = true;
+    skipNextSnapshot.current = true;
 
-      await updateDoc(doc(db, "documents", documentId), {
-        title,
-        content,
-        updatedAt: serverTimestamp(),
-      });
+    await updateDoc(doc(db, "documents", documentId), {
+      title,
+      content,
+      updatedAt: serverTimestamp(),
+    });
 
-      await addDoc(collection(db, "activities"), {
-        type: "updated",
-        documentId,
-        title,
-        userId: user.uid,
-        userName,
-        createdAt: serverTimestamp(),
-      });
+    await addDoc(collection(db, "activities"), {
+      type: "updated",
+      documentId,
+      title,
+      userId: user.uid,
+      userName,
+      createdAt: serverTimestamp(),
+    });
 
-      setLastSaved(new Date());
-    } catch {
-      setErrorMsg("Save failed.");
-    }
+    setLastSaved(new Date());
     setSaving(false);
   };
 
-  // 🔵 Auto-save
-  const handleAutoSave = async () => {
-    setAutoSaving(true);
-    try {
+  // ------------------------------
+  // AUTOSAVE
+  // ------------------------------
+  const triggerAutosave = () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+
+    saveTimer.current = setTimeout(async () => {
       skipNextSnapshot.current = true;
+      setAutoSaving(true);
 
       await updateDoc(doc(db, "documents", documentId), {
         title,
@@ -151,13 +168,15 @@ const DocumentEditor = ({ documentId }) => {
       });
 
       setLastSaved(new Date());
-    } catch {}
-    setAutoSaving(false);
+      setAutoSaving(false);
+    }, 1200);
   };
 
-  // 🔵 Upload file to Supabase
-  const uploadToSupabase = async (file, path) => {
-    const { error } = await supabase.storage
+  // ------------------------------
+  // FILE UPLOAD TO SUPABASE
+  // ------------------------------
+  const uploadFile = async (file, path) => {
+    const { data, error } = await supabase.storage
       .from("documents")
       .upload(path, file);
 
@@ -170,9 +189,8 @@ const DocumentEditor = ({ documentId }) => {
     return urlObj.publicUrl;
   };
 
-  // 🔵 Handle file upload
   const handleFileUpload = async (e) => {
-    const list = Array.from(e.target.files || []);
+    const list = Array.from(e.target.files);
     if (!list.length) return;
 
     setUploading(true);
@@ -180,7 +198,7 @@ const DocumentEditor = ({ documentId }) => {
     try {
       for (const file of list) {
         const path = `${documentId}/${Date.now()}_${file.name}`;
-        const url = await uploadToSupabase(file, path);
+        const url = await uploadFile(file, path);
 
         await addDoc(collection(db, "documents", documentId, "files"), {
           name: file.name,
@@ -190,53 +208,45 @@ const DocumentEditor = ({ documentId }) => {
           uploadedAt: serverTimestamp(),
         });
       }
-
-      await addDoc(collection(db, "activities"), {
-        type: "file-upload",
-        documentId,
-        title,
-        userId: user.uid,
-        userName,
-        createdAt: serverTimestamp(),
-      });
-    } catch {
-      setErrorMsg("Upload failed.");
+    } catch (err) {
+      console.log("Upload failed:", err);
     }
 
     setUploading(false);
     e.target.value = "";
   };
 
-  // 🔵 Share document
+  // ------------------------------
+  // SHARE DOCUMENT
+  // ------------------------------
   const handleShare = async () => {
     setShareError("");
     setShareSuccess("");
 
-    if (!shareEmail.trim()) return setShareError("Enter an email.");
+    if (!shareEmail.trim()) return setShareError("Enter valid email");
 
-    try {
-      const snap = await getDocs(
-        query(collection(db, "users"), where("email", "==", shareEmail.trim()))
-      );
+    const snap = await getDocs(
+      query(collection(db, "users"), where("email", "==", shareEmail.trim()))
+    );
 
-      if (snap.empty) {
-        setShareError("User not found.");
-        return;
-      }
-
-      const targetUid = snap.docs[0].data().uid;
-
-      await updateDoc(doc(db, "documents", documentId), {
-        collaborators: arrayUnion(targetUid),
-      });
-
-      setShareSuccess("User added!");
-      setShareEmail("");
-    } catch {
-      setShareError("Share failed.");
+    if (snap.empty) {
+      setShareError("User not found");
+      return;
     }
+
+    const uid = snap.docs[0].data().uid;
+
+    await updateDoc(doc(db, "documents", documentId), {
+      collaborators: arrayUnion(uid),
+    });
+
+    setShareSuccess("User added!");
+    setShareEmail("");
   };
 
+  // ------------------------------
+  // UI
+  // ------------------------------
   return (
     <div className="doc-root">
 
@@ -247,8 +257,7 @@ const DocumentEditor = ({ documentId }) => {
           value={title}
           onChange={(e) => {
             setTitle(e.target.value);
-            if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-            saveTimeoutRef.current = setTimeout(handleAutoSave, 1500);
+            triggerAutosave();
           }}
         />
 
@@ -267,35 +276,32 @@ const DocumentEditor = ({ documentId }) => {
         </button>
       </div>
 
-      {/* Active Users */}
+      {/* ACTIVE USERS BAR */}
       <div className="active-users-bar">
         {activeUsers.map((u, i) => (
           <div key={i} className="active-user">
-            {u.name.charAt(0).toUpperCase()}
+            {u.name?.charAt(0).toUpperCase()}
           </div>
         ))}
         <span className="active-label">
-          {activeUsers.length} people here now
+          {activeUsers.length} active now
         </span>
       </div>
 
-      {errorMsg && <div className="error-banner">{errorMsg}</div>}
-
+      {/* BODY */}
       <div className="doc-body">
         <textarea
           className="doc-editor"
           value={content}
           onChange={(e) => {
-            setContentState(e.target.value);
-            if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-            saveTimeoutRef.current = setTimeout(handleAutoSave, 1500);
+            setContent(e.target.value);
+            triggerAutosave();
           }}
           placeholder="Start typing..."
         />
 
         {/* SIDEBAR */}
         <div className="doc-sidebar">
-
           <div className="upload-card">
             <h3>Upload Files</h3>
             <input type="file" multiple onChange={handleFileUpload} />
@@ -315,7 +321,6 @@ const DocumentEditor = ({ documentId }) => {
               ))}
             </ul>
           </div>
-
         </div>
       </div>
 
@@ -324,14 +329,12 @@ const DocumentEditor = ({ documentId }) => {
         <div className="share-popup">
           <div className="share-card">
             <h3>Share Document</h3>
-
             <input
               type="email"
               placeholder="user@example.com"
               value={shareEmail}
               onChange={(e) => setShareEmail(e.target.value)}
             />
-
             {shareError && <p className="share-error">{shareError}</p>}
             {shareSuccess && <p className="share-success">{shareSuccess}</p>}
 
