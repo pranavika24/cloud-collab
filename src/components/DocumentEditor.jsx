@@ -1,4 +1,4 @@
-// eslint-disable-next-line
+// src/components/DocumentEditor.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { db } from "../firebase";
 import {
@@ -40,25 +40,33 @@ const DocumentEditor = ({ documentId }) => {
   const [shareSuccess, setShareSuccess] = useState("");
 
   const [activeUsers, setActiveUsers] = useState([]);
-  const saveTimeoutRef = useRef(null);
 
-  // Load Document realtime
+  const saveTimeoutRef = useRef(null);
+  const typingRef = useRef(false); // 🔥 NEW — stops Firestore from overwriting while typing
+
+  // 🔵 REALTIME DOCUMENT LOADER — FIXED (No overwrite while typing)
   useEffect(() => {
     if (!documentId) return;
 
     const docRef = doc(db, "documents", documentId);
+
     const unsub = onSnapshot(docRef, (snap) => {
       const data = snap.data();
-      if (data) {
-        setTitle(data.title || "");
-        setContent(data.content || "");
+      if (!data) return;
+
+      // Only update title if not typing
+      setTitle((prev) => (prev !== data.title ? data.title : prev));
+
+      // If user is typing, ignore Firestore changes
+      if (!typingRef.current) {
+        setContent((prev) => (prev !== data.content ? data.content : prev));
       }
     });
 
     return () => unsub();
   }, [documentId]);
 
-  // Load Files realtime
+  // 🔵 REALTIME FILES LOADER
   useEffect(() => {
     if (!documentId) return;
 
@@ -74,7 +82,8 @@ const DocumentEditor = ({ documentId }) => {
     return () => unsub();
   }, [documentId]);
 
-  // Active users tracker — ignore ESLint dependency rule completely
+  // 🔵 ACTIVE USERS — ESLINT SAFE
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!documentId || !user) return;
 
@@ -92,15 +101,14 @@ const DocumentEditor = ({ documentId }) => {
     });
 
     return () => deleteDoc(userRef);
-
-    // eslint-disable-next-line
   }, [documentId, user]);
 
-  // Listen active users
+  // LISTEN ACTIVE USERS
   useEffect(() => {
     if (!documentId) return;
 
     const activeRef = collection(db, "documents", documentId, "activeUsers");
+
     const unsub = onSnapshot(activeRef, (snapshot) => {
       setActiveUsers(snapshot.docs.map((d) => d.data()));
     });
@@ -108,9 +116,10 @@ const DocumentEditor = ({ documentId }) => {
     return () => unsub();
   }, [documentId]);
 
-  // Manual save
+  // 🔵 MANUAL SAVE
   const handleSave = async () => {
     setSaving(true);
+
     try {
       await updateDoc(doc(db, "documents", documentId), {
         title,
@@ -131,12 +140,14 @@ const DocumentEditor = ({ documentId }) => {
     } catch {
       setErrorMsg("Save failed.");
     }
+
     setSaving(false);
   };
 
-  // Auto-save
+  // 🔵 AUTOSAVE
   const handleAutoSave = async () => {
     setAutoSaving(true);
+
     try {
       await updateDoc(doc(db, "documents", documentId), {
         title,
@@ -144,11 +155,14 @@ const DocumentEditor = ({ documentId }) => {
         updatedAt: serverTimestamp(),
       });
       setLastSaved(new Date());
-    } catch {}
+    } catch (e) {
+      console.error("Auto-save failed:", e);
+    }
+
     setAutoSaving(false);
   };
 
-  // Upload file
+  // 🔵 SUPABASE UPLOAD
   const uploadToSupabase = async (file, path) => {
     const { error } = await supabase.storage
       .from("documents")
@@ -163,7 +177,6 @@ const DocumentEditor = ({ documentId }) => {
     return urlObj.publicUrl;
   };
 
-  // Handle upload
   const handleFileUpload = async (e) => {
     const list = Array.from(e.target.files || []);
     if (!list.length) return;
@@ -183,6 +196,15 @@ const DocumentEditor = ({ documentId }) => {
           uploadedAt: serverTimestamp(),
         });
       }
+
+      await addDoc(collection(db, "activities"), {
+        type: "file-upload",
+        documentId,
+        title,
+        userId: user.uid,
+        userName,
+        createdAt: serverTimestamp(),
+      });
     } catch {
       setErrorMsg("Upload failed.");
     }
@@ -191,7 +213,7 @@ const DocumentEditor = ({ documentId }) => {
     e.target.value = "";
   };
 
-  // Share
+  // 🔵 SHARE DOCUMENT
   const handleShare = async () => {
     setShareError("");
     setShareSuccess("");
@@ -203,7 +225,10 @@ const DocumentEditor = ({ documentId }) => {
         query(collection(db, "users"), where("email", "==", shareEmail.trim()))
       );
 
-      if (snap.empty) return setShareError("User not found.");
+      if (snap.empty) {
+        setShareError("User not found.");
+        return;
+      }
 
       const targetUid = snap.docs[0].data().uid;
 
@@ -227,12 +252,16 @@ const DocumentEditor = ({ documentId }) => {
           className="doc-title-input"
           value={title}
           onChange={(e) => {
+            typingRef.current = true;
             setTitle(e.target.value);
 
             if (saveTimeoutRef.current)
               clearTimeout(saveTimeoutRef.current);
 
-            saveTimeoutRef.current = setTimeout(handleAutoSave, 1500);
+            saveTimeoutRef.current = setTimeout(() => {
+              typingRef.current = false;
+              handleAutoSave();
+            }, 1500);
           }}
         />
 
@@ -270,12 +299,16 @@ const DocumentEditor = ({ documentId }) => {
           className="doc-editor"
           value={content}
           onChange={(e) => {
+            typingRef.current = true;
             setContent(e.target.value);
 
             if (saveTimeoutRef.current)
               clearTimeout(saveTimeoutRef.current);
 
-            saveTimeoutRef.current = setTimeout(handleAutoSave, 1500);
+            saveTimeoutRef.current = setTimeout(() => {
+              typingRef.current = false;
+              handleAutoSave();
+            }, 1500);
           }}
           placeholder="Start typing..."
         />
