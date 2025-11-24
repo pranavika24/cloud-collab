@@ -1,4 +1,3 @@
-// src/components/DocumentEditor.jsx
 import React, { useEffect, useState, useRef } from "react";
 import { db } from "../firebase";
 import {
@@ -26,7 +25,7 @@ const DocumentEditor = ({ documentId }) => {
   const userName = user?.displayName || user?.email;
 
   const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
+  const [content, setContentState] = useState("");
   const [saving, setSaving] = useState(false);
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState(null);
@@ -42,31 +41,31 @@ const DocumentEditor = ({ documentId }) => {
   const [activeUsers, setActiveUsers] = useState([]);
 
   const saveTimeoutRef = useRef(null);
-  const typingRef = useRef(false); // 🔥 NEW — stops Firestore from overwriting while typing
+  const skipNextSnapshot = useRef(false);
 
-  // 🔵 REALTIME DOCUMENT LOADER — FIXED (No overwrite while typing)
+  // 🔵 Load Document realtime
   useEffect(() => {
     if (!documentId) return;
 
     const docRef = doc(db, "documents", documentId);
 
     const unsub = onSnapshot(docRef, (snap) => {
+      if (skipNextSnapshot.current) {
+        skipNextSnapshot.current = false;
+        return;
+      }
+
       const data = snap.data();
-      if (!data) return;
-
-      // Only update title if not typing
-      setTitle((prev) => (prev !== data.title ? data.title : prev));
-
-      // If user is typing, ignore Firestore changes
-      if (!typingRef.current) {
-        setContent((prev) => (prev !== data.content ? data.content : prev));
+      if (data) {
+        setTitle(data.title || "");
+        setContentState(data.content || "");
       }
     });
 
     return () => unsub();
   }, [documentId]);
 
-  // 🔵 REALTIME FILES LOADER
+  // 🔵 Load Files realtime
   useEffect(() => {
     if (!documentId) return;
 
@@ -82,28 +81,23 @@ const DocumentEditor = ({ documentId }) => {
     return () => unsub();
   }, [documentId]);
 
-  // 🔵 ACTIVE USERS — ESLINT SAFE
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // 🔵 Active users tracker
   useEffect(() => {
     if (!documentId || !user) return;
 
-    const userRef = doc(
-      db,
-      "documents",
-      documentId,
-      "activeUsers",
-      user.uid
-    );
+    const ref = doc(db, "documents", documentId, "activeUsers", user.uid);
 
-    setDoc(userRef, {
+    setDoc(ref, {
       name: userName,
       enteredAt: serverTimestamp(),
     });
 
-    return () => deleteDoc(userRef);
+    return () => deleteDoc(ref);
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentId, user]);
 
-  // LISTEN ACTIVE USERS
+  // 🔵 Listen to active users
   useEffect(() => {
     if (!documentId) return;
 
@@ -116,11 +110,12 @@ const DocumentEditor = ({ documentId }) => {
     return () => unsub();
   }, [documentId]);
 
-  // 🔵 MANUAL SAVE
+  // 🔵 Manual Save Button
   const handleSave = async () => {
     setSaving(true);
-
     try {
+      skipNextSnapshot.current = true;
+
       await updateDoc(doc(db, "documents", documentId), {
         title,
         content,
@@ -140,29 +135,27 @@ const DocumentEditor = ({ documentId }) => {
     } catch {
       setErrorMsg("Save failed.");
     }
-
     setSaving(false);
   };
 
-  // 🔵 AUTOSAVE
+  // 🔵 Auto-save
   const handleAutoSave = async () => {
     setAutoSaving(true);
-
     try {
+      skipNextSnapshot.current = true;
+
       await updateDoc(doc(db, "documents", documentId), {
         title,
         content,
         updatedAt: serverTimestamp(),
       });
-      setLastSaved(new Date());
-    } catch (e) {
-      console.error("Auto-save failed:", e);
-    }
 
+      setLastSaved(new Date());
+    } catch {}
     setAutoSaving(false);
   };
 
-  // 🔵 SUPABASE UPLOAD
+  // 🔵 Upload file to Supabase
   const uploadToSupabase = async (file, path) => {
     const { error } = await supabase.storage
       .from("documents")
@@ -177,6 +170,7 @@ const DocumentEditor = ({ documentId }) => {
     return urlObj.publicUrl;
   };
 
+  // 🔵 Handle file upload
   const handleFileUpload = async (e) => {
     const list = Array.from(e.target.files || []);
     if (!list.length) return;
@@ -213,7 +207,7 @@ const DocumentEditor = ({ documentId }) => {
     e.target.value = "";
   };
 
-  // 🔵 SHARE DOCUMENT
+  // 🔵 Share document
   const handleShare = async () => {
     setShareError("");
     setShareSuccess("");
@@ -252,16 +246,9 @@ const DocumentEditor = ({ documentId }) => {
           className="doc-title-input"
           value={title}
           onChange={(e) => {
-            typingRef.current = true;
             setTitle(e.target.value);
-
-            if (saveTimeoutRef.current)
-              clearTimeout(saveTimeoutRef.current);
-
-            saveTimeoutRef.current = setTimeout(() => {
-              typingRef.current = false;
-              handleAutoSave();
-            }, 1500);
+            if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+            saveTimeoutRef.current = setTimeout(handleAutoSave, 1500);
           }}
         />
 
@@ -280,7 +267,7 @@ const DocumentEditor = ({ documentId }) => {
         </button>
       </div>
 
-      {/* ACTIVE USERS */}
+      {/* Active Users */}
       <div className="active-users-bar">
         {activeUsers.map((u, i) => (
           <div key={i} className="active-user">
@@ -299,22 +286,16 @@ const DocumentEditor = ({ documentId }) => {
           className="doc-editor"
           value={content}
           onChange={(e) => {
-            typingRef.current = true;
-            setContent(e.target.value);
-
-            if (saveTimeoutRef.current)
-              clearTimeout(saveTimeoutRef.current);
-
-            saveTimeoutRef.current = setTimeout(() => {
-              typingRef.current = false;
-              handleAutoSave();
-            }, 1500);
+            setContentState(e.target.value);
+            if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+            saveTimeoutRef.current = setTimeout(handleAutoSave, 1500);
           }}
           placeholder="Start typing..."
         />
 
         {/* SIDEBAR */}
         <div className="doc-sidebar">
+
           <div className="upload-card">
             <h3>Upload Files</h3>
             <input type="file" multiple onChange={handleFileUpload} />
@@ -334,6 +315,7 @@ const DocumentEditor = ({ documentId }) => {
               ))}
             </ul>
           </div>
+
         </div>
       </div>
 
