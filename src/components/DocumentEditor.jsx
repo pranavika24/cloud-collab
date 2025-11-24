@@ -1,5 +1,4 @@
-// ✅ FINAL, COMPLETE, FULLY-FIXED VERSION
-// src/components/DocumentEditor.jsx
+// FINAL — Independent Editing Mode (No Cursor Jump)
 
 import React, { useEffect, useState, useRef } from "react";
 import { db } from "../firebase";
@@ -31,8 +30,8 @@ const DocumentEditor = ({ documentId }) => {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [lastSaved, setLastSaved] = useState(null);
-  const [autoSaving, setAutoSaving] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [autoSaving, setAutoSaving] = useState(false);
 
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -44,15 +43,15 @@ const DocumentEditor = ({ documentId }) => {
 
   const [activeUsers, setActiveUsers] = useState([]);
 
-  // Fix cursor jumping
-  const skipNextSnapshot = useRef(false);
+  // Prevent unwanted overwrite while typing
+  const isTyping = useRef(false);
 
-  // Debounce timer
+  // Autosave timer
   const saveTimer = useRef(null);
 
-  // ------------------------------
-  // REAL-TIME LISTENER
-  // ------------------------------
+  // ---------------------------------------------------
+  // LOAD DOCUMENT FROM FIREBASE (but NEVER override while typing)
+  // ---------------------------------------------------
   useEffect(() => {
     if (!documentId) return;
 
@@ -61,14 +60,12 @@ const DocumentEditor = ({ documentId }) => {
     const unsub = onSnapshot(ref, (snap) => {
       if (!snap.exists()) return;
 
-      // Prevent cursor jump
-      if (skipNextSnapshot.current) {
-        skipNextSnapshot.current = false;
-        return;
-      }
-
       const data = snap.data();
 
+      // DO NOT overwrite if user is typing
+      if (isTyping.current) return;
+
+      // Only update when content actually changes
       setTitle((prev) => (prev !== data.title ? data.title : prev));
       setContent((prev) => (prev !== data.content ? data.content : prev));
     });
@@ -76,9 +73,9 @@ const DocumentEditor = ({ documentId }) => {
     return () => unsub();
   }, [documentId]);
 
-  // ------------------------------
+  // ---------------------------------------------------
   // LOAD FILES
-  // ------------------------------
+  // ---------------------------------------------------
   useEffect(() => {
     if (!documentId) return;
 
@@ -94,9 +91,9 @@ const DocumentEditor = ({ documentId }) => {
     return () => unsub();
   }, [documentId]);
 
-  // ------------------------------
+  // ---------------------------------------------------
   // ACTIVE USERS
-  // ------------------------------
+  // ---------------------------------------------------
   useEffect(() => {
     if (!documentId || !user) return;
 
@@ -122,12 +119,12 @@ const DocumentEditor = ({ documentId }) => {
     return () => unsub();
   }, [documentId]);
 
-  // ------------------------------
-  // MANUAL SAVE
-  // ------------------------------
+  // ---------------------------------------------------
+  // MANUAL SAVE BUTTON
+  // ---------------------------------------------------
   const handleSave = async () => {
     setSaving(true);
-    skipNextSnapshot.current = true;
+    isTyping.current = true;
 
     await updateDoc(doc(db, "documents", documentId), {
       title,
@@ -144,41 +141,40 @@ const DocumentEditor = ({ documentId }) => {
       createdAt: serverTimestamp(),
     });
 
+    isTyping.current = false;
     setLastSaved(new Date());
     setSaving(false);
   };
 
-  // ------------------------------
-  // AUTOSAVE (debounced)
-  // ------------------------------
+  // ---------------------------------------------------
+  // AUTOSAVE (Independent Editing)
+  // ---------------------------------------------------
   const triggerAutosave = () => {
+    isTyping.current = true;
+
     if (saveTimer.current) clearTimeout(saveTimer.current);
 
     saveTimer.current = setTimeout(async () => {
-      skipNextSnapshot.current = true;
-      setAutoSaving(true);
-
       await updateDoc(doc(db, "documents", documentId), {
         title,
         content,
         updatedAt: serverTimestamp(),
       });
 
+      isTyping.current = false;
       setLastSaved(new Date());
       setAutoSaving(false);
-    }, 1200);
+    }, 1300);
   };
 
-  // ------------------------------
-  // FILE UPLOAD TO SUPABASE
-  // ------------------------------
+  // ---------------------------------------------------
+  // FILE UPLOAD
+  // ---------------------------------------------------
   const uploadFile = async (file, path) => {
     const { error } = await supabase.storage.from("documents").upload(path, file);
-
     if (error) throw error;
 
     const { data } = supabase.storage.from("documents").getPublicUrl(path);
-
     return data.publicUrl;
   };
 
@@ -188,36 +184,30 @@ const DocumentEditor = ({ documentId }) => {
 
     setUploading(true);
 
-    try {
-      for (const file of list) {
-        const path = `${documentId}/${Date.now()}_${file.name}`;
-        const url = await uploadFile(file, path);
+    for (const file of list) {
+      const path = `${documentId}/${Date.now()}_${file.name}`;
+      const url = await uploadFile(file, path);
 
-        await addDoc(collection(db, "documents", documentId, "files"), {
-          name: file.name,
-          url,
-          size: file.size,
-          uploadedByName: userName,
-          uploadedAt: serverTimestamp(),
-        });
-      }
-    } catch (err) {
-      console.log("upload error:", err);
+      await addDoc(collection(db, "documents", documentId, "files"), {
+        name: file.name,
+        url,
+        uploadedByName: userName,
+        uploadedAt: serverTimestamp(),
+      });
     }
 
     setUploading(false);
-    e.target.value = "";
   };
 
-  // ------------------------------
+  // ---------------------------------------------------
   // SHARE DOCUMENT
-  // ------------------------------
+  // ---------------------------------------------------
   const handleShare = async () => {
     setShareError("");
     setShareSuccess("");
 
     if (!shareEmail.trim()) {
-      setShareError("Enter valid email");
+      setShareError("Enter a valid email");
       return;
     }
 
@@ -240,12 +230,12 @@ const DocumentEditor = ({ documentId }) => {
     setShareEmail("");
   };
 
-  // ------------------------------
+  // ---------------------------------------------------
   // UI
-  // ------------------------------
+  // ---------------------------------------------------
   return (
     <div className="doc-root">
-
+      
       {/* HEADER */}
       <div className="doc-header">
         <input
@@ -257,15 +247,11 @@ const DocumentEditor = ({ documentId }) => {
           }}
         />
 
-        {autoSaving ? (
-          <span className="saving-text">Saving...</span>
-        ) : lastSaved ? (
+        {autoSaving ? <span className="saving-text">Saving…</span> : lastSaved ? (
           <span className="saved-text">Saved ✓</span>
         ) : null}
 
-        <button onClick={handleSave}>
-          {saving ? "Saving..." : "Save"}
-        </button>
+        <button onClick={handleSave}>{saving ? "Saving…" : "Save"}</button>
 
         <button className="share-btn" onClick={() => setShowShare(true)}>
           Share
@@ -275,13 +261,11 @@ const DocumentEditor = ({ documentId }) => {
       {/* ACTIVE USERS */}
       <div className="active-users-bar">
         {activeUsers.map((u, i) => (
-          <div className="active-user" key={i}>
-            {u.name?.charAt(0).toUpperCase()}
+          <div key={i} className="active-user">
+            {u.name?.charAt(0)?.toUpperCase()}
           </div>
         ))}
-        <span className="active-label">
-          {activeUsers.length} active now
-        </span>
+        <span className="active-label">{activeUsers.length} active now</span>
       </div>
 
       {/* BODY */}
@@ -301,7 +285,7 @@ const DocumentEditor = ({ documentId }) => {
           <div className="upload-card">
             <h3>Upload Files</h3>
             <input type="file" multiple onChange={handleFileUpload} />
-            {uploading && <p>Uploading...</p>}
+            {uploading && <p>Uploading…</p>}
           </div>
 
           <div className="files-card">
@@ -338,14 +322,13 @@ const DocumentEditor = ({ documentId }) => {
 
             <div className="share-actions">
               <button onClick={handleShare}>Add</button>
-              <button onClick={() => setShowShare(false)} className="close">
+              <button className="close" onClick={() => setShowShare(false)}>
                 Close
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 };
