@@ -1,4 +1,4 @@
-// FINAL PRODUCTION VERSION — Cursor FIXED + Typing Indicator + Error-Free
+// FINAL STABLE EDITOR — No Cursor Jump, No Letter Delete, No Overwrite
 
 import React, { useEffect, useState, useRef } from "react";
 import { db } from "../firebase";
@@ -30,30 +30,25 @@ const DocumentEditor = ({ documentId }) => {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [lastSaved, setLastSaved] = useState(null);
-
-  const [autoSaving, setAutoSaving] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [autoSaving, setAutoSaving] = useState(false);
 
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
 
   const [activeUsers, setActiveUsers] = useState([]);
-  const [typingUsers, setTypingUsers] = useState([]); // NEW
 
   const [showShare, setShowShare] = useState(false);
   const [shareEmail, setShareEmail] = useState("");
   const [shareError, setShareError] = useState("");
   const [shareSuccess, setShareSuccess] = useState("");
 
-  // FIX cursor overwrite
+  // Cursor protection
   const isTyping = useRef(false);
-
-  // Autosave debounce timer
   const saveTimer = useRef(null);
-  const typingTimer = useRef(null);
 
   // ---------------------------------------------------
-  // REALTIME LISTENER (never overwrite while typing)
+  // REALTIME SNAPSHOT (DO NOT overwrite while typing)
   // ---------------------------------------------------
   useEffect(() => {
     if (!documentId) return;
@@ -63,9 +58,11 @@ const DocumentEditor = ({ documentId }) => {
     const unsub = onSnapshot(ref, (snap) => {
       if (!snap.exists()) return;
 
-      if (isTyping.current) return; // prevent overwriting local typing
-
       const data = snap.data();
+
+      // Prevent overwrite while typing
+      if (isTyping.current) return;
+
       setTitle((prev) => (prev !== data.title ? data.title : prev));
       setContent((prev) => (prev !== data.content ? data.content : prev));
     });
@@ -118,58 +115,32 @@ const DocumentEditor = ({ documentId }) => {
   }, [documentId]);
 
   // ---------------------------------------------------
-  // TYPING INDICATOR (NEW FEATURE)
-  // ---------------------------------------------------
-  useEffect(() => {
-    if (!documentId || !user) return;
-
-    const ref = collection(db, "documents", documentId, "typing");
-
-    return onSnapshot(ref, (snap) => {
-      const list = snap.docs
-        .map((d) => ({ uid: d.id, ...d.data() }))
-        .filter((u) => u.uid !== user.uid);
-
-      setTypingUsers(list);
-    });
-  }, [documentId, user]);
-
-  const markTyping = async () => {
-    const ref = doc(db, "documents", documentId, "typing", user.uid);
-
-    await setDoc(ref, { name: userName });
-
-    if (typingTimer.current) clearTimeout(typingTimer.current);
-
-    typingTimer.current = setTimeout(() => {
-      deleteDoc(ref);
-    }, 2000);
-  };
-
-  // ---------------------------------------------------
-  // AUTOSAVE
+  // AUTOSAVE (with strong debounce + cursor protection)
   // ---------------------------------------------------
   const triggerAutosave = () => {
     isTyping.current = true;
-    markTyping();
 
     if (saveTimer.current) clearTimeout(saveTimer.current);
 
     saveTimer.current = setTimeout(async () => {
-      await updateDoc(doc(db, "documents", documentId), {
+      setAutoSaving(true);
+
+      const ref = doc(db, "documents", documentId);
+
+      await updateDoc(ref, {
         title,
         content,
         updatedAt: serverTimestamp(),
       });
 
       isTyping.current = false;
-      setLastSaved(new Date());
       setAutoSaving(false);
-    }, 1400);
+      setLastSaved(new Date());
+    }, 1500);
   };
 
   // ---------------------------------------------------
-  // MANUAL SAVE
+  // MANUAL SAVE BUTTON
   // ---------------------------------------------------
   const handleSave = async () => {
     setSaving(true);
@@ -185,10 +156,11 @@ const DocumentEditor = ({ documentId }) => {
   };
 
   // ---------------------------------------------------
-  // FILE UPLOAD
+  // UPLOAD FILES
   // ---------------------------------------------------
   const uploadFile = async (file, path) => {
     const { error } = await supabase.storage.from("documents").upload(path, file);
+
     if (error) throw error;
 
     const { data } = supabase.storage.from("documents").getPublicUrl(path);
@@ -217,13 +189,15 @@ const DocumentEditor = ({ documentId }) => {
   };
 
   // ---------------------------------------------------
-  // SHARE
+  // SHARE DOCUMENT
   // ---------------------------------------------------
   const handleShare = async () => {
     setShareError("");
     setShareSuccess("");
 
-    if (!shareEmail.trim()) return setShareError("Enter a valid email");
+    if (!shareEmail.trim()) {
+      return setShareError("Enter valid email");
+    }
 
     const snap = await getDocs(
       query(collection(db, "users"), where("email", "==", shareEmail.trim()))
@@ -258,13 +232,15 @@ const DocumentEditor = ({ documentId }) => {
           }}
         />
 
-        {autoSaving ? (
-          <span className="saving-text">Saving…</span>
-        ) : lastSaved ? (
+        {autoSaving ? <span className="saving-text">Saving…</span> : null}
+        {lastSaved && !autoSaving ? (
           <span className="saved-text">Saved ✓</span>
         ) : null}
 
-        <button onClick={handleSave}>{saving ? "Saving…" : "Save"}</button>
+        <button onClick={handleSave}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+
         <button className="share-btn" onClick={() => setShowShare(true)}>
           Share
         </button>
@@ -277,16 +253,8 @@ const DocumentEditor = ({ documentId }) => {
             {u.name?.charAt(0).toUpperCase()}
           </div>
         ))}
-
         <span className="active-label">{activeUsers.length} active now</span>
       </div>
-
-      {/* TYPING INDICATOR */}
-      {typingUsers.length > 0 && (
-        <div className="typing-banner">
-          {typingUsers[0].name} is typing…
-        </div>
-      )}
 
       {/* BODY */}
       <div className="doc-body">
